@@ -68,7 +68,7 @@ jobs:
           cp -r static/ public/
         fi
         # Create documentation site
-        cat > public/index.html << EOF
+        cat > public/index.html << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
