@@ -1,29 +1,69 @@
-# Python3 Application
+# Hospital Management Application
 
-Лаба дисциплины "Базы данных" (модуль 4)
+This is a Python/Tornado web application for hospital management.
 
-## Стек технологий
+## Project Structure
 
-- Python 3 (фреймворк tornado)
+- **Backend:** Python with Tornado framework
+- **Database:** Redis
+- **Frontend:** HTML templates with Bootstrap CSS
 
-- Redis в качестве хранилки
+## Features
 
-## Локальный запуск
+- Hospital management
+- Doctor management
+- Patient management
+- Diagnosis tracking
+- Doctor-patient relationships
 
-*примеры команд ниже указаны для unix-подобных ОС, с виндой разбирайтесь сами*
+## Running the Application
 
-1. Ставим Redis, настраиваем и проверяем его работоспособность
+### Prerequisites
 
-2. Устанавливаем Python 3 и пакетный менеджер pip для своей ОС (hard way)
+- Docker
+- Docker Compose
 
-3. ... или ставим IDE PyCharm, которая упростит эту задачу (easy way)
+### Running with Docker
 
-4. При необходимости, меняем адрес сервера Redis в 12 строке файл `main.py`
+```bash
+docker-compose up -d
+```
 
-5. Ставим необходимые зависимости командой ` $ pip3 install -r requirements.txt`
+The application will be available at: http://localhost:8888
 
-6. Запускаем веб-сервис командой ` $ python3 main.py`
+### Running Locally (without Docker)
 
-## Дополнительно
+1. Install Python 3.9
+2. Install dependencies: `pip install -r requirements.txt`
+3. Install and run Redis server
+4. Run the application: `python main.py`
+5. Visit: http://localhost:8888
 
-Сервис доступен по адресу http://localhost:8888
+## Testing
+
+Run unit tests with:
+
+```bash
+python -m unittest test_app.py -v
+```
+
+## CI/CD Pipeline
+
+This project uses GitHub Actions for:
+- Running unit tests
+- Building Docker images
+- Testing application functionality
+- Deploying documentation to GitHub Pages
+
+## GitHub Actions Workflow
+
+The workflow is defined in `.github/workflows/ci-cd.yml` and includes:
+- Test job: Runs unit tests
+- Build job: Builds and tests Docker image
+- Deploy job: Creates and deploys documentation to GitHub Pages
+
+## Note about GitHub Pages Deployment
+
+GitHub Pages only supports static sites, not server-side applications like this Tornado app.
+The actual application runs as a Docker container and is not directly deployable to GitHub Pages.
+The GitHub Pages site serves as documentation for the project and its CI/CD pipeline.
