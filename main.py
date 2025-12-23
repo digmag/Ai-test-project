@@ -1,288 +1,369 @@
 #!/usr/bin/env python3
+"""
+Hospital Management Application - Рефакторинг
+"""
 
 import logging
 import os
 import redis
 import tornado.ioloop
 import tornado.web
-
 from tornado.options import parse_command_line
+from typing import Dict, List, Optional, Any
+import json
 
+# Настройки порта
 PORT = 8888
-r = redis.StrictRedis(host=os.environ.get("REDIS_HOST", "localhost"), 
-    port=int(os.environ.get("REDIS_PORT", "6379")), db=0)
+
+class RedisManager:
+    """Класс для управления подключением к Redis"""
+
+    def __init__(self):
+        self.connection = redis.StrictRedis(
+            host=os.environ.get("REDIS_HOST", "localhost"),
+            port=int(os.environ.get("REDIS_PORT", "6379")),
+            db=0,
+            decode_responses=False  # Оставляем как есть для совместимости
+        )
+
+    def get_connection(self):
+        return self.connection
 
 
-class MainHandler(tornado.web.RequestHandler):
+# Глобальный экземпляр Redis
+redis_manager = RedisManager()
+r = redis_manager.get_connection()
+
+
+class BaseHandler(tornado.web.RequestHandler):
+    """Базовый обработчик с общими методами"""
+
+    def get_redis(self):
+        return r
+
+    def handle_redis_error(self, error: Exception, message: str = "Redis connection refused"):
+        """Обработка ошибок Redis"""
+        logging.error(f"Redis error: {str(error)}")
+        self.set_status(400)
+        self.write(message)
+
+    def validate_required_fields(self, fields_func, required: List[str]) -> bool:
+        """Проверка обязательных полей"""
+        for field in required:
+            try:
+                value = fields_func(field)
+                if not value:
+                    return False
+            except:
+                return False
+        return True
+
+
+class MainHandler(BaseHandler):
     def get(self):
         self.render('templates/index.html')
 
 
-class HospitalHandler(tornado.web.RequestHandler):
+class HospitalHandler(BaseHandler):
+    MODEL_NAME = "hospital"
+    REQUIRED_FIELDS = ["name", "address"]
+
     def get(self):
         items = []
         try:
-            ID = r.get("hospital:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID")
+            if auto_id:
+                auto_id = auto_id.decode()
 
-            for i in range(int(ID)):
-                result = r.hgetall("hospital:" + str(i))
-                if result:
-                    items.append(result)
+                for i in range(int(auto_id)):
+                    result = self.get_redis().hgetall(f"{self.MODEL_NAME}:{i}")
+                    if result:
+                        items.append(result)
 
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
-        else:
-            self.render('templates/hospital.html', items=items)
+            self.render(f'templates/{self.MODEL_NAME}.html', items=items)
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
 
     def post(self):
-        name = self.get_argument('name')
-        address = self.get_argument('address')
-        beds_number = self.get_argument('beds_number')
-        phone = self.get_argument('phone')
+        # Получаем аргументы
+        data = {
+            'name': self.get_argument('name'),
+            'address': self.get_argument('address'),
+            'phone': self.get_argument('phone'),
+            'beds_number': self.get_argument('beds_number')
+        }
 
-        if not name or not address:
+        # Проверяем обязательные поля
+        if not self.validate_required_fields(self.get_argument, self.REQUIRED_FIELDS):
             self.set_status(400)
-            self.write("Hospital name and address required")
+            self.write(f"{self.MODEL_NAME.capitalize()} name and address required")
             return
 
-        logging.debug(name + ' ' + address + ' ' + beds_number + ' ' + phone)
+        logging.debug(f"{data['name']} {data['address']} {data['phone']} {data['beds_number']}")
 
         try:
-            ID = r.get("hospital:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID").decode()
 
-            a  = r.hset("hospital:" + ID, "name", name)
-            a += r.hset("hospital:" + ID, "address", address)
-            a += r.hset("hospital:" + ID, "phone", phone)
-            a += r.hset("hospital:" + ID, "beds_number", beds_number)
+            # Сохраняем данные
+            fields_set = 0
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "name", data['name'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "address", data['address'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "phone", data['phone'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "beds_number", data['beds_number'])
 
-            r.incr("hospital:autoID")
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
+            self.get_redis().incr(f"{self.MODEL_NAME}:autoID")
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
         else:
-            if (a != 4):
+            if fields_set != 4:
                 self.set_status(500)
                 self.write("Something went terribly wrong")
             else:
-                self.write('OK: ID ' + ID + " for " + name)
+                self.write(f'OK: ID {auto_id} for {data["name"]}')
 
 
-class DoctorHandler(tornado.web.RequestHandler):
+class DoctorHandler(BaseHandler):
+    MODEL_NAME = "doctor"
+    REQUIRED_FIELDS = ["surname", "profession"]
+
     def get(self):
         items = []
         try:
-            ID = r.get("doctor:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID")
+            if auto_id:
+                auto_id = auto_id.decode()
 
-            for i in range(int(ID)):
-                result = r.hgetall("doctor:" + str(i))
-                if result:
-                    items.append(result)
+                for i in range(int(auto_id)):
+                    result = self.get_redis().hgetall(f"{self.MODEL_NAME}:{i}")
+                    if result:
+                        items.append(result)
 
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
-        else:
-            self.render('templates/doctor.html', items=items)
+            self.render(f'templates/{self.MODEL_NAME}.html', items=items)
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
 
     def post(self):
-        surname = self.get_argument('surname')
-        profession = self.get_argument('profession')
-        hospital_ID = self.get_argument('hospital_ID')
+        # Получаем аргументы
+        data = {
+            'surname': self.get_argument('surname'),
+            'profession': self.get_argument('profession'),
+            'hospital_ID': self.get_argument('hospital_ID')
+        }
 
-        if not surname or not profession:
+        # Проверяем обязательные поля
+        if not self.validate_required_fields(self.get_argument, self.REQUIRED_FIELDS):
             self.set_status(400)
             self.write("Surname and profession required")
             return
 
-        logging.debug(surname + ' ' + profession)
+        logging.debug(f"{data['surname']} {data['profession']}")
 
         try:
-            ID = r.get("doctor:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID").decode()
 
-            if hospital_ID:
-                # check that hospital exist
-                hospital = r.hgetall("hospital:" + hospital_ID)
-
+            # Проверяем существование больницы, если указан ID
+            if data['hospital_ID']:
+                hospital = self.get_redis().hgetall(f"hospital:{data['hospital_ID']}")
                 if not hospital:
                     self.set_status(400)
                     self.write("No hospital with such ID")
                     return
 
-            a  = r.hset("doctor:" + ID, "surname", surname)
-            a += r.hset("doctor:" + ID, "profession", profession)
-            a += r.hset("doctor:" + ID, "hospital_ID", hospital_ID)
+            # Сохраняем данные
+            fields_set = 0
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "surname", data['surname'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "profession", data['profession'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "hospital_ID", data['hospital_ID'])
 
-            r.incr("doctor:autoID")
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
+            self.get_redis().incr(f"{self.MODEL_NAME}:autoID")
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
         else:
-            if (a != 3):
+            if fields_set != 3:
                 self.set_status(500)
                 self.write("Something went terribly wrong")
             else:
-                self.write('OK: ID ' + ID + " for " + surname)
+                self.write(f'OK: ID {auto_id} for {data["surname"]}')
 
 
-class PatientHandler(tornado.web.RequestHandler):
+class PatientHandler(BaseHandler):
+    MODEL_NAME = "patient"
+    REQUIRED_FIELDS = ["surname", "born_date", "sex", "mpn"]
+
     def get(self):
         items = []
         try:
-            ID = r.get("patient:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID")
+            if auto_id:
+                auto_id = auto_id.decode()
 
-            for i in range(int(ID)):
-                result = r.hgetall("patient:" + str(i))
-                if result:
-                    items.append(result)
+                for i in range(int(auto_id)):
+                    result = self.get_redis().hgetall(f"{self.MODEL_NAME}:{i}")
+                    if result:
+                        items.append(result)
 
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
-        else:
-            self.render('templates/patient.html', items=items)
+            self.render(f'templates/{self.MODEL_NAME}.html', items=items)
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
 
     def post(self):
-        surname = self.get_argument('surname')
-        born_date = self.get_argument('born_date')
-        sex = self.get_argument('sex')
-        mpn = self.get_argument('mpn')
+        # Получаем аргументы
+        data = {
+            'surname': self.get_argument('surname'),
+            'born_date': self.get_argument('born_date'),
+            'sex': self.get_argument('sex'),
+            'mpn': self.get_argument('mpn')
+        }
 
-        if not surname or not born_date or not sex or not mpn:
+        # Проверяем обязательные поля
+        if not self.validate_required_fields(self.get_argument, self.REQUIRED_FIELDS):
             self.set_status(400)
             self.write("All fields required")
             return
 
-        # wow what a check
-        if sex not in ['M', 'F']:
+        # Проверяем пол
+        if data['sex'] not in ['M', 'F']:
             self.set_status(400)
             self.write("Sex must be 'M' or 'F'")
             return
 
-        logging.debug(surname + ' ' + born_date + ' ' + sex + ' ' + mpn)
+        logging.debug(f"{data['surname']} {data['born_date']} {data['sex']} {data['mpn']}")
 
         try:
-            ID = r.get("patient:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID").decode()
 
-            a  = r.hset("patient:" + ID, "surname", surname)
-            a += r.hset("patient:" + ID, "born_date", born_date)
-            a += r.hset("patient:" + ID, "sex", sex)
-            a += r.hset("patient:" + ID, "mpn", mpn)
+            # Сохраняем данные
+            fields_set = 0
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "surname", data['surname'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "born_date", data['born_date'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "sex", data['sex'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "mpn", data['mpn'])
 
-            r.incr("patient:autoID")
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
+            self.get_redis().incr(f"{self.MODEL_NAME}:autoID")
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
         else:
-            if (a != 4):
+            if fields_set != 4:
                 self.set_status(500)
                 self.write("Something went terribly wrong")
             else:
-                self.write('OK: ID ' + ID + " for " + surname)
+                self.write(f'OK: ID {auto_id} for {data["surname"]}')
 
 
-class DiagnosisHandler(tornado.web.RequestHandler):
+class DiagnosisHandler(BaseHandler):
+    MODEL_NAME = "diagnosis"
+    REQUIRED_FIELDS = ["patient_ID", "type"]
+
     def get(self):
         items = []
         try:
-            ID = r.get("diagnosis:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID")
+            if auto_id:
+                auto_id = auto_id.decode()
 
-            for i in range(int(ID)):
-                result = r.hgetall("diagnosis:" + str(i))
-                if result:
-                    items.append(result)
-            
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
-        else:
-            self.render('templates/diagnosis.html', items=items)
+                for i in range(int(auto_id)):
+                    result = self.get_redis().hgetall(f"{self.MODEL_NAME}:{i}")
+                    if result:
+                        items.append(result)
+
+            self.render(f'templates/{self.MODEL_NAME}.html', items=items)
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
 
     def post(self):
-        patient_ID = self.get_argument('patient_ID')
-        diagnosis_type = self.get_argument('type')
-        information = self.get_argument('information')
+        # Получаем аргументы
+        data = {
+            'patient_ID': self.get_argument('patient_ID'),
+            'type': self.get_argument('type'),
+            'information': self.get_argument('information')
+        }
 
-        if not patient_ID or not diagnosis_type:
+        # Проверяем обязательные поля
+        if not self.validate_required_fields(self.get_argument, self.REQUIRED_FIELDS):
             self.set_status(400)
             self.write("Patiend ID and diagnosis type required")
             return
 
-        logging.debug(patient_ID + ' ' + diagnosis_type + ' ' + information)
+        logging.debug(f"{data['patient_ID']} {data['type']} {data['information']}")
 
         try:
-            ID = r.get("diagnosis:autoID").decode()
+            auto_id = self.get_redis().get(f"{self.MODEL_NAME}:autoID").decode()
 
-            patient = r.hgetall("patient:" + patient_ID)
-
+            # Проверяем существование пациента
+            patient = self.get_redis().hgetall(f"patient:{data['patient_ID']}")
             if not patient:
                 self.set_status(400)
                 self.write("No patient with such ID")
                 return
 
-            a  = r.hset("diagnosis:" + ID, "patient_ID", patient_ID)
-            a += r.hset("diagnosis:" + ID, "type", diagnosis_type)
-            a += r.hset("diagnosis:" + ID, "information", information)
+            # Сохраняем данные
+            fields_set = 0
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "patient_ID", data['patient_ID'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "type", data['type'])
+            fields_set += self.get_redis().hset(f"{self.MODEL_NAME}:{auto_id}", "information", data['information'])
 
-            r.incr("diagnosis:autoID")
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
+            self.get_redis().incr(f"{self.MODEL_NAME}:autoID")
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
         else:
-            if (a != 3):
+            if fields_set != 3:
                 self.set_status(500)
                 self.write("Something went terribly wrong")
             else:
-                self.write('OK: ID ' + ID + " for patient " + patient[b'surname'].decode())
+                patient_surname = patient.get(b'surname', b'Unknown').decode()
+                self.write(f'OK: ID {auto_id} for patient {patient_surname}')
 
 
-class DoctorPatientHandler(tornado.web.RequestHandler):
+class DoctorPatientHandler(BaseHandler):
+    MODEL_NAME = "doctor-patient"
+
     def get(self):
         items = {}
         try:
-            ID = r.get("doctor:autoID").decode()
+            auto_id = self.get_redis().get("doctor:autoID")
+            if auto_id:
+                auto_id = auto_id.decode()
 
-            for i in range(int(ID)):
-                result = r.smembers("doctor-patient:" + str(i))
-                if result:
-                    items[i] = result
+                for i in range(int(auto_id)):
+                    result = self.get_redis().smembers(f"doctor-patient:{i}")
+                    if result:
+                        items[i] = result
 
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
-        else:
-            self.render('templates/doctor-patient.html', items=items)
+            self.render(f'templates/{self.MODEL_NAME}.html', items=items)
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
 
     def post(self):
+        # Получаем аргументы
         doctor_ID = self.get_argument('doctor_ID')
         patient_ID = self.get_argument('patient_ID')
-        
+
         if not doctor_ID or not patient_ID:
             self.set_status(400)
             self.write("ID required")
             return
 
-        logging.debug(doctor_ID + ' ' + patient_ID)
+        logging.debug(f"{doctor_ID} {patient_ID}")
 
         try:
-            patient = r.hgetall("patient:" + patient_ID)
-            doctor = r.hgetall("doctor:" + doctor_ID)
+            patient = self.get_redis().hgetall(f"patient:{patient_ID}")
+            doctor = self.get_redis().hgetall(f"doctor:{doctor_ID}")
 
             if not patient or not doctor:
                 self.set_status(400)
                 self.write("No such ID for doctor or patient")
                 return
 
-            r.sadd("doctor-patient:" + doctor_ID, patient_ID)
+            self.get_redis().sadd(f"doctor-patient:{doctor_ID}", patient_ID)
 
-        except redis.exceptions.ConnectionError:
-            self.set_status(400)
-            self.write("Redis connection refused")
+        except redis.exceptions.ConnectionError as e:
+            self.handle_redis_error(e)
         else:
-            self.write("OK: doctor ID: " + doctor_ID + ", patient ID: " + patient_ID)
+            self.write(f"OK: doctor ID: {doctor_ID}, patient ID: {patient_ID}")
 
 
 def init_db():
+    """Инициализация базы данных"""
     db_initiated = r.get("db_initiated")
     if not db_initiated:
         r.set("hospital:autoID", 1)
@@ -293,6 +374,7 @@ def init_db():
 
 
 def make_app():
+    """Создание приложения"""
     return tornado.web.Application([
         (r"/", MainHandler),
         (r'/static/(.*)', tornado.web.StaticFileHandler, {'path': 'static/'}),
@@ -301,7 +383,11 @@ def make_app():
         (r"/patient", PatientHandler),
         (r"/diagnosis", DiagnosisHandler),
         (r"/doctor-patient", DoctorPatientHandler)
-    ], autoreload=True, debug=True, compiled_template_cache=False, serve_traceback=True)
+    ],
+    autoreload=True,
+    debug=True,
+    compiled_template_cache=False,
+    serve_traceback=True)
 
 
 if __name__ == "__main__":
