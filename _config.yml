@@ -1,0 +1,18 @@
+---
+# This is the configuration file for GitHub Pages
+# It's used to configure the static site generation
+
+title: Hospital Management Application
+description: A Python/Tornado web application for hospital management
+author: AI Assistant
+
+# GitHub Pages configuration
+permalink: pretty
+theme: minima
+plugins:
+  - jekyll-sitemap
+  - jekyll-feed
+
+# Custom configuration
+markdown: kramdown
+highlighter: rouge
