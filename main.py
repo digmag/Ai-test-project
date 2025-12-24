@@ -362,6 +362,78 @@ class DoctorPatientHandler(BaseHandler):
             self.write(f"OK: doctor ID: {doctor_ID}, patient ID: {patient_ID}")
 
 
+class AnalyticsHandler(BaseHandler):
+    """Обработчик для аналитики"""
+
+    def get(self):
+        """Получение аналитической информации"""
+        try:
+            analytics = {}
+
+            # Подсчет количества сущностей
+            analytics['hospital_count'] = int(r.get("hospital:autoID").decode()) - 1 if r.get("hospital:autoID") else 0
+            analytics['doctor_count'] = int(r.get("doctor:autoID").decode()) - 1 if r.get("doctor:autoID") else 0
+            analytics['patient_count'] = int(r.get("patient:autoID").decode()) - 1 if r.get("patient:autoID") else 0
+            analytics['diagnosis_count'] = int(r.get("diagnosis:autoID").decode()) - 1 if r.get("diagnosis:autoID") else 0
+
+            # Подсчет связей врач-пациент
+            doctor_auto_id = int(r.get("doctor:autoID").decode()) if r.get("doctor:autoID") else 0
+            doctor_patient_count = 0
+            for i in range(doctor_auto_id):
+                connections = r.smembers(f"doctor-patient:{i}")
+                doctor_patient_count += len(connections)
+
+            analytics['doctor_patient_connections'] = doctor_patient_count
+
+            # Дополнительная аналитика
+            analytics['total_entities'] = (
+                analytics['hospital_count'] +
+                analytics['doctor_count'] +
+                analytics['patient_count'] +
+                analytics['diagnosis_count']
+            )
+
+            # Средняя нагрузка на одного врача
+            if analytics['doctor_count'] > 0:
+                analytics['avg_patients_per_doctor'] = round(analytics['doctor_patient_connections'] / analytics['doctor_count'], 2)
+            else:
+                analytics['avg_patients_per_doctor'] = 0
+
+            # Среднее количество диагнозов на пациента
+            if analytics['patient_count'] > 0:
+                analytics['avg_diagnoses_per_patient'] = round(analytics['diagnosis_count'] / analytics['patient_count'], 2)
+            else:
+                analytics['avg_diagnoses_per_patient'] = 0
+
+            # Подсчет количества сущностей в каждой больнице
+            hospitals_with_stats = []
+            for i in range(analytics['hospital_count']):
+                hospital = r.hgetall(f"hospital:{i}")
+                if hospital:
+                    hospital_name = hospital.get(b'name', b'Unknown').decode()
+
+                    # Подсчет врачей в этой больнице
+                    doctors_in_hospital = 0
+                    for j in range(analytics['doctor_count']):
+                        doctor = r.hgetall(f"doctor:{j}")
+                        if doctor and doctor.get(b'hospital_ID', b'').decode() == str(i):
+                            doctors_in_hospital += 1
+
+                    hospitals_with_stats.append({
+                        'id': i,
+                        'name': hospital_name,
+                        'doctors_count': doctors_in_hospital
+                    })
+
+            analytics['hospitals_with_stats'] = hospitals_with_stats
+
+            self.set_header("Content-Type", "application/json")
+            self.write(analytics)
+
+        except Exception as e:
+            self.handle_redis_error(e, "Error retrieving analytics")
+
+
 def init_db():
     """Инициализация базы данных"""
     db_initiated = r.get("db_initiated")
@@ -382,7 +454,8 @@ def make_app():
         (r"/doctor", DoctorHandler),
         (r"/patient", PatientHandler),
         (r"/diagnosis", DiagnosisHandler),
-        (r"/doctor-patient", DoctorPatientHandler)
+        (r"/doctor-patient", DoctorPatientHandler),
+        (r"/analytics", AnalyticsHandler)  # Новый эндпоинт для аналитики
     ],
     autoreload=True,
     debug=True,
