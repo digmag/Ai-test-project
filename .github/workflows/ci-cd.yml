@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline for starbly-server
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # Используем self-hosted runner для starbly-server
 
     steps:
     - uses: actions/checkout@v3
@@ -28,7 +28,7 @@ jobs:
         python -m unittest test_app.py -v
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # Используем self-hosted runner для starbly-server
     needs: test
 
     steps:
@@ -52,161 +52,35 @@ jobs:
         docker logs test-app
         docker stop test-app
 
-  build-and-deploy-pages:
-    runs-on: ubuntu-latest
+  deploy:
+    runs-on: self-hosted  # Используем self-hosted runner для starbly-server
     needs: [test, build]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Create static documentation site for GitHub Pages
+    - name: Build and tag Docker image for deployment
       run: |
-        mkdir -p public
-        # Copy static assets
-        if [ -d "static" ]; then
-          cp -r static/ public/
-        fi
-        # Create documentation site using echo for each line to avoid YAML indentation issues
-        echo '<!DOCTYPE html>' > public/index.html
-        echo '<html lang="en">' >> public/index.html
-        echo '<head>' >> public/index.html
-        echo '    <meta charset="UTF-8">' >> public/index.html
-        echo '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' >> public/index.html
-        echo '    <title>Hospital Management Application</title>' >> public/index.html
-        echo '    <style>' >> public/index.html
-        echo '        body {' >> public/index.html
-        echo '            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;' >> public/index.html
-        echo '            line-height: 1.6;' >> public/index.html
-        echo '            max-width: 800px;' >> public/index.html
-        echo '            margin: 0 auto;' >> public/index.html
-        echo '            padding: 20px;' >> public/index.html
-        echo '            color: #333;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        .header {' >> public/index.html
-        echo '            text-align: center;' >> public/index.html
-        echo '            border-bottom: 1px solid #eee;' >> public/index.html
-        echo '            padding-bottom: 20px;' >> public/index.html
-        echo '            margin-bottom: 30px;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        .card {' >> public/index.html
-        echo '            background: #f8f9fa;' >> public/index.html
-        echo '            border-radius: 8px;' >> public/index.html
-        echo '            padding: 20px;' >> public/index.html
-        echo '            margin: 15px 0;' >> public/index.html
-        echo '            box-shadow: 0 2px 4px rgba(0,0,0,0.1);' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        .note {' >> public/index.html
-        echo '            background-color: #e7f3ff;' >> public/index.html
-        echo '            border-left: 4px solid #2196F3;' >> public/index.html
-        echo '            padding: 15px;' >> public/index.html
-        echo '            margin: 15px 0;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        pre {' >> public/index.html
-        echo '            background: #f4f4f4;' >> public/index.html
-        echo '            padding: 15px;' >> public/index.html
-        echo '            border-radius: 4px;' >> public/index.html
-        echo '            overflow-x: auto;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        code {' >> public/index.html
-        echo '            font-family: "Courier New", monospace;' >> public/index.html
-        echo '            background: #f4f4f4;' >> public/index.html
-        echo '            padding: 2px 4px;' >> public/index.html
-        echo '            border-radius: 3px;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        .features {' >> public/index.html
-        echo '            display: grid;' >> public/index.html
-        echo '            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));' >> public/index.html
-        echo '            gap: 20px;' >> public/index.html
-        echo '            margin: 20px 0;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '        .feature-card {' >> public/index.html
-        echo '            background: #f8f9fa;' >> public/index.html
-        echo '            border-radius: 8px;' >> public/index.html
-        echo '            padding: 15px;' >> public/index.html
-        echo '            text-align: center;' >> public/index.html
-        echo '        }' >> public/index.html
-        echo '    </style>' >> public/index.html
-        echo '</head>' >> public/index.html
-        echo '<body>' >> public/index.html
-        echo '    <div class="header">' >> public/index.html
-        echo '        <h1>Hospital Management Application</h1>' >> public/index.html
-        echo '        <p>A Python/Tornado web application for hospital management</p>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="note">' >> public/index.html
-        echo '        <h3>Important Note</h3>' >> public/index.html
-        echo '        <p>GitHub Pages only supports static sites, not server-side applications like this Tornado app.</p>' >> public/index.html
-        echo '        <p>The actual application runs as a Docker container and is not directly deployable to GitHub Pages.</p>' >> public/index.html
-        echo '        <p>This page serves as documentation for the project and its CI/CD pipeline.</p>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="card">' >> public/index.html
-        echo '        <h2>Project Overview</h2>' >> public/index.html
-        echo '        <p>This is a Python/Tornado web application for managing hospital operations, including:</p>' >> public/index.html
-        echo '        <ul>' >> public/index.html
-        echo '            <li>Hospital management</li>' >> public/index.html
-        echo '            <li>Doctor management</li>' >> public/index.html
-        echo '            <li>Patient management</li>' >> public/index.html
-        echo '            <li>Diagnosis tracking</li>' >> public/index.html
-        echo '            <li>Doctor-patient relationships</li>' >> public/index.html
-        echo '        </ul>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="card">' >> public/index.html
-        echo '        <h2>Technology Stack</h2>' >> public/index.html
-        echo '        <div class="features">' >> public/index.html
-        echo '            <div class="feature-card">' >> public/index.html
-        echo '                <h3>Backend</h3>' >> public/index.html
-        echo '                <p>Python 3.9</p>' >> public/index.html
-        echo '                <p>Tornado Framework</p>' >> public/index.html
-        echo '            </div>' >> public/index.html
-        echo '            <div class="feature-card">' >> public/index.html
-        echo '                <h3>Database</h3>' >> public/index.html
-        echo '                <p>Redis</p>' >> public/index.html
-        echo '            </div>' >> public/index.html
-        echo '            <div class="feature-card">' >> public/index.html
-        echo '                <h3>Frontend</h3>' >> public/index.html
-        echo '                <p>HTML Templates</p>' >> public/index.html
-        echo '                <p>Bootstrap CSS</p>' >> public/index.html
-        echo '            </div>' >> public/index.html
-        echo '        </div>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="card">' >> public/index.html
-        echo '        <h2>How to Run Locally</h2>' >> public/index.html
-        echo '        <p>Clone the repository and run:</p>' >> public/index.html
-        echo '        <pre><code>docker-compose up -d</code></pre>' >> public/index.html
-        echo '        <p>Then visit: <a href="http://localhost:8888">http://localhost:8888</a></p>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="card">' >> public/index.html
-        echo '        <h2>CI/CD Pipeline</h2>' >> public/index.html
-        echo '        <p>This project uses GitHub Actions for:</p>' >> public/index.html
-        echo '        <ul>' >> public/index.html
-        echo '            <li>Running unit tests</li>' >> public/index.html
-        echo '            <li>Building Docker images</li>' >> public/index.html
-        echo '            <li>Testing application functionality</li>' >> public/index.html
-        echo '            <li>Deploying documentation to GitHub Pages</li>' >> public/index.html
-        echo '        </ul>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <div class="card">' >> public/index.html
-        echo '        <h2>Testing</h2>' >> public/index.html
-        echo '        <p>Run unit tests with:</p>' >> public/index.html
-        echo '        <pre><code>python -m unittest test_app.py -v</code></pre>' >> public/index.html
-        echo '    </div>' >> public/index.html
-        echo '' >> public/index.html
-        echo '    <footer style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #666;">' >> public/index.html
-        echo '        <p>Hosted on GitHub Pages • Built with GitHub Actions</p>' >> public/index.html
-        echo '    </footer>' >> public/index.html
-        echo '</body>' >> public/index.html
-        echo '</html>' >> public/index.html
+        docker build -t hospital-management:${{ github.sha }} .
+        docker tag hospital-management:${{ github.sha }} hospital-management:latest
 
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./public
-        publish_branch: gh-pages
-        force_orphan: true
+    - name: Deploy to starbly-server
+      run: |
+        # Копируем production docker-compose файл
+        cp docker-compose.prod.yml docker-compose.yml
+
+        # Остановка старого контейнера, если он существует
+        docker-compose down || true
+
+        # Удаляем старые образы
+        docker image prune -f
+
+        # Запускаем новую версию приложения
+        docker-compose up -d
+
+        # Ждем, пока приложение запустится
+        sleep 15
+
+        # Проверяем статус сервисов
+        docker-compose ps
