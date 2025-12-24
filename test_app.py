@@ -864,5 +864,153 @@ class TestMainHandler(unittest.TestCase):
         handler.render.assert_called_once_with('templates/index.html')
 
 
+class TestAnalyticsHandler(unittest.TestCase):
+    """Тесты для обработчика аналитики"""
+
+    def setUp(self):
+        # Сохраняем оригинальное соединение с Redis
+        self.original_redis = main.r
+
+        # Создаем мок-объект для Redis
+        self.mock_redis = Mock()
+        main.r = self.mock_redis
+
+        # Инициализируем тестовую базу данных
+        main.init_db()
+
+    def tearDown(self):
+        # Восстанавливаем оригинальное соединение
+        main.r = self.original_redis
+
+    def test_get_analytics_success(self):
+        """Тест успешного получения аналитики"""
+        # Настраиваем мок для возврата значений
+        def get_side_effect(key):
+            if key == "hospital:autoID":
+                return b'1'
+            elif key == "doctor:autoID":
+                return b'1'
+            elif key == "patient:autoID":
+                return b'1'
+            elif key == "diagnosis:autoID":
+                return b'1'
+            else:
+                return None
+
+        self.mock_redis.get.side_effect = get_side_effect
+        self.mock_redis.hgetall.return_value = {}
+        self.mock_redis.smembers.return_value = set()
+
+        # Создаем мок-запрос
+        request = Mock()
+        request.method = "GET"
+        request.uri = "/analytics"
+        request.headers = {}
+
+        # Создаем обработчик
+        app = Application()
+        handler = main.AnalyticsHandler(app, request)
+
+        # Мокаем методы для проверки результата
+        handler.write = MagicMock()
+        handler.set_status = MagicMock()
+        handler.set_header = MagicMock()
+
+        # Вызываем метод get
+        handler.get()
+
+        # Проверяем, что write был вызван (возвращен JSON)
+        handler.write.assert_called_once()
+        # Проверяем, что заголовок Content-Type установлен
+        handler.set_header.assert_called_with("Content-Type", "application/json")
+
+    def test_get_analytics_with_data(self):
+        """Тест получения аналитики с данными"""
+        # Настраиваем мок для возврата значений с данными
+        def get_side_effect(key):
+            if key == "hospital:autoID":
+                return b'2'
+            elif key == "doctor:autoID":
+                return b'2'
+            elif key == "patient:autoID":
+                return b'2'
+            elif key == "diagnosis:autoID":
+                return b'2'
+            else:
+                return None
+
+        self.mock_redis.get.side_effect = get_side_effect
+
+        # Возвращаем разные данные в зависимости от ключа
+        def hgetall_side_effect(key):
+            if key == "hospital:0":
+                return {b'name': b'TestHospital', b'address': b'TestAddress'}
+            elif key == "hospital:1":
+                return {}
+            elif key == "doctor:0":
+                return {b'surname': b'TestDoctor', b'profession': b'Surgeon', b'hospital_ID': b'0'}
+            elif key == "doctor:1":
+                return {}
+            elif key == "patient:0":
+                return {b'surname': b'TestPatient', b'born_date': b'1990-01-01', b'sex': b'M', b'mpn': b'123456'}
+            elif key == "patient:1":
+                return {}
+            else:
+                return {}
+
+        self.mock_redis.hgetall.side_effect = hgetall_side_effect
+        self.mock_redis.smembers.return_value = {'0'}
+
+        # Создаем мок-запрос
+        request = Mock()
+        request.method = "GET"
+        request.uri = "/analytics"
+        request.headers = {}
+
+        # Создаем обработчик
+        app = Application()
+        handler = main.AnalyticsHandler(app, request)
+
+        # Мокаем методы для проверки результата
+        handler.write = MagicMock()
+        handler.set_status = MagicMock()
+        handler.set_header = MagicMock()
+
+        # Вызываем метод get
+        handler.get()
+
+        # Проверяем, что write был вызван
+        handler.write.assert_called_once()
+        # Проверяем, что заголовок Content-Type установлен
+        handler.set_header.assert_called_with("Content-Type", "application/json")
+
+    def test_get_analytics_redis_error(self):
+        """Тест ошибки Redis при получении аналитики"""
+        # Настраиваем мок для выбрасывания исключения
+        self.mock_redis.get.side_effect = Exception("Redis connection failed")
+
+        # Создаем мок-запрос
+        request = Mock()
+        request.method = "GET"
+        request.uri = "/analytics"
+        request.headers = {}
+
+        # Создаем обработчик
+        app = Application()
+        handler = main.AnalyticsHandler(app, request)
+
+        # Мокаем методы для проверки результата
+        handler.write = MagicMock()
+        handler.set_status = MagicMock()
+        handler.set_header = MagicMock()
+
+        # Вызываем метод get
+        handler.get()
+
+        # Проверяем, что был установлен статус 400 и сообщение об ошибке
+        handler.set_status.assert_called_with(400)
+        handler.write.assert_called_once_with("Error retrieving analytics")
+
+
 if __name__ == '__main__':
     unittest.main()
