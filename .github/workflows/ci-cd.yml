@@ -7,8 +7,35 @@ on:
     branches: [ main, master ]
 
 jobs:
+  cleanup:
+    runs-on: self-hosted  # Используем self-hosted runner для starbly-server
+    steps:
+    - name: Clean up Docker containers and images
+      run: |
+        # Остановка и удаление контейнеров с тестами
+        docker stop test-app-* 2>/dev/null || true
+        docker rm test-app-* 2>/dev/null || true
+
+        # Остановка и удаление контейнеров hospital_management_app
+        docker stop hospital_management_app* 2>/dev/null || true
+        docker rm hospital_management_app* 2>/dev/null || true
+
+        # Остановка и удаление контейнеров hospital_management_redis
+        docker stop hospital_management_redis* 2>/dev/null || true
+        docker rm hospital_management_redis* 2>/dev/null || true
+
+        # Удаление всех остановленных контейнеров
+        docker container prune -f 2>/dev/null || true
+
+        # Удаление образов hospital-management
+        docker rmi $(docker images -q hospital-management) 2>/dev/null || true
+
+        # Удаление всех неиспользуемых образов
+        docker image prune -f 2>/dev/null || true
+
   test:
     runs-on: self-hosted  # Используем self-hosted runner для starbly-server
+    needs: cleanup
 
     steps:
     - uses: actions/checkout@v3
@@ -47,10 +74,11 @@ jobs:
 
     - name: Run application briefly to test
       run: |
-        docker run -d --name test-app -p 8888:8888 hospital-management:latest
+        docker run -d --name test-app-${{ github.run_number }} -p 8888:8888 hospital-management:latest
         sleep 10
-        docker logs test-app
-        docker stop test-app
+        docker logs test-app-${{ github.run_number }}
+        docker stop test-app-${{ github.run_number }}
+        docker rm test-app-${{ github.run_number }}
 
   deploy:
     runs-on: self-hosted  # Используем self-hosted runner для starbly-server
@@ -73,8 +101,11 @@ jobs:
         # Остановка старого контейнера, если он существует
         docker-compose down || true
 
-        # Удаляем старые образы
-        docker image prune -f
+        # Удаляем старые образы hospital-management
+        docker rmi $(docker images -q hospital-management) 2>/dev/null || true
+
+        # Удаляем остановленные контейнеры
+        docker container prune -f 2>/dev/null || true
 
         # Запускаем новую версию приложения
         docker-compose up -d
